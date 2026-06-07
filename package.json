@@ -1,0 +1,49 @@
+{
+  "name": "1",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "prisma db push && npx tsx prisma/seed.ts",
+    "postinstall": "prisma generate",
+    "test": "jest",
+    "db:migrate": "node migrations/migrate.mjs",
+    "db:migrate:status": "node migrations/migrate.mjs --status",
+    "backup": "bash scripts/backup.sh",
+    "backup:test": "node scripts/test-backup-restore.mjs",
+    "worker": "node src/workers/queue-worker.mjs"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^2",
+    "bull": "^4.16.5",
+    "ioredis": "^5.4.2",
+    "jose": "^5",
+    "next": "14.2.35",
+    "react": "^18",
+    "react-dom": "^18"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2",
+    "@types/bull": "^4.10.4",
+    "@types/ioredis": "^5.0.0",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
+    "postcss": "^8",
+    "prisma": "^5.22.0",
+    "tailwindcss": "^3.4.1",
+    "tsx": "^4",
+    "typescript": "^5"
+  },
+  "prisma": {
+    "seed": "npx tsx prisma/seed.ts"
+  }
+}
