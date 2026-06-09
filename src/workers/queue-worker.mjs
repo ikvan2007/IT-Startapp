@@ -1,122 +1,64 @@
-/**
- * Воркер очереди задач — запускается отдельным процессом.
- *
- * Запуск (вне Docker):
- *   REDIS_URL=redis://localhost:6379 DATABASE_URL=file:./prisma/dev.db \
- *   node --env-file=.env src/workers/queue-worker.mjs
- *
- * В Docker: добавьте сервис `worker` в docker-compose.yml (пример ниже).
- *
- * docker-compose фрагмент:
- * ─────────────────────────
- *   worker:
- *     build:
- *       context: .
- *       dockerfile: Dockerfile
- *       target: runner
- *     command: node src/workers/queue-worker.mjs
- *     environment:
- *       REDIS_URL: redis://redis:6379
- *       DATABASE_URL: file:/app/prisma/dev.db
- *     depends_on:
- *       - redis
- *     restart: unless-stopped
- */
+#!/usr/bin/env node
+// src/workers/queue-worker.mjs
+//
+// Bull-воркер для фоновых задач
+// Запуск: node src/workers/queue-worker.mjs
+//
+// Очереди:
+//   xp-awards   — начисление XP (дублирующий путь через очередь)
+//   notifications — уведомления (заглушка)
 
-import { PrismaClient } from "@prisma/client";
-import Bull from "bull";
-import { cacheDelete } from "../lib/redis.js";
+import Bull from 'bull'
 
-const prisma = new PrismaClient();
-const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
 
-const queueOpts = {
-  redis: REDIS_URL,
-  defaultJobOptions: {
-    attempts: 3,
-    backoff: { type: "exponential", delay: 2000 },
-    removeOnComplete: 100,
-    removeOnFail: 50,
-  },
-};
+console.log('🚀 Study Task — Queue Worker запускается...')
+console.log(`   Redis: ${REDIS_URL}`)
 
-// ─── XP Update ──────────────────────────────────────────────────────────────
-
-const xpQueue = new Bull("xp-update", queueOpts);
+// ── XP Award Queue ───────────────────────────────────────────────────────
+const xpQueue = new Bull('xp-awards', REDIS_URL)
 
 xpQueue.process(async (job) => {
-  const { userId, xpDelta } = job.data;
-  console.log(`[worker] xp-update userId=${userId} delta=${xpDelta}`);
+  const { userId, amount, lessonId } = job.data
+  console.log(`[xp-awards] userId=${userId} +${amount} XP (lesson ${lessonId})`)
+  // Логика начисления XP уже выполнена в API, здесь можно:
+  // - отправить push-уведомление
+  // - обновить стрик
+  // - пересчитать рейтинг
+  return { ok: true }
+})
 
-  const user = await prisma.user.update({
-    where: { id: userId },
-    data: { xp: { increment: xpDelta } },
-    select: { xp: true },
-  });
+xpQueue.on('completed', (job, result) => {
+  console.log(`[xp-awards] ✅ job ${job.id} completed`)
+})
 
-  const newLevel = Math.min(99, Math.floor(user.xp / 100) + 1);
-  await prisma.user.update({
-    where: { id: userId },
-    data: { level: newLevel },
-  });
+xpQueue.on('failed', (job, err) => {
+  console.error(`[xp-awards] ❌ job ${job.id} failed:`, err.message)
+})
 
-  // Инвалидируем кэш профиля
-  await cacheDelete(`user:${userId}`);
-  console.log(`[worker] xp-update done userId=${userId} xp=${user.xp} level=${newLevel}`);
-});
+// ── Notifications Queue ──────────────────────────────────────────────────
+const notifQueue = new Bull('notifications', REDIS_URL)
 
-// ─── Badge Check ─────────────────────────────────────────────────────────────
+notifQueue.process(async (job) => {
+  const { userId, type, payload } = job.data
+  console.log(`[notifications] userId=${userId} type=${type}`, payload)
+  // TODO: email / push notification
+  return { sent: true }
+})
 
-const badgeQueue = new Bull("badge-check", queueOpts);
+notifQueue.on('failed', (job, err) => {
+  console.error(`[notifications] ❌ job ${job.id} failed:`, err.message)
+})
 
-badgeQueue.process(async (job) => {
-  const { userId, currentXp } = job.data;
-  console.log(`[worker] badge-check userId=${userId} xp=${currentXp}`);
-
-  const [badgesToGrant, existingBadges] = await Promise.all([
-    prisma.badge.findMany({ where: { xpRequired: { lte: currentXp } } }),
-    prisma.userBadge.findMany({
-      where: { userId },
-      select: { badgeId: true },
-    }),
-  ]);
-
-  const existingIds = new Set(existingBadges.map((b) => b.badgeId));
-  const newBadges = badgesToGrant.filter((b) => !existingIds.has(b.id));
-
-  if (newBadges.length) {
-    await prisma.userBadge.createMany({
-      data: newBadges.map((b) => ({ userId, badgeId: b.id })),
-      skipDuplicates: true,
-    });
-    console.log(`[worker] badge-check granted ${newBadges.length} badges to ${userId}`);
-  }
-});
-
-// ─── Leaderboard Sync ────────────────────────────────────────────────────────
-
-const leaderboardQueue = new Bull("leaderboard-sync", queueOpts);
-
-leaderboardQueue.process(async (job) => {
-  const { courseId } = job.data;
-  console.log(`[worker] leaderboard-sync courseId=${courseId ?? "all"}`);
-
-  if (courseId) {
-    await cacheDelete(`leaderboard:${courseId}`);
-  } else {
-    await cacheDelete("leaderboard:*");
-  }
-  await cacheDelete("courses:all");
-  console.log(`[worker] leaderboard-sync done`);
-});
-
-// ─── Глобальная обработка ошибок ─────────────────────────────────────────────
-
-for (const q of [xpQueue, badgeQueue, leaderboardQueue]) {
-  q.on("failed", (job, err) => {
-    console.error(`[worker] Job ${job.id} in queue "${q.name}" failed:`, err.message);
-  });
+// ── Graceful shutdown ────────────────────────────────────────────────────
+async function shutdown(signal) {
+  console.log(`\n📴 ${signal} — завершаем воркер...`)
+  await xpQueue.close()
+  await notifQueue.close()
+  process.exit(0)
 }
 
-console.log("✅ Queue worker запущен. Ожидаю задачи...");
-console.log(`   Redis: ${REDIS_URL}`);
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
+
+console.log('✅ Воркер запущен. Ожидаем задачи...')

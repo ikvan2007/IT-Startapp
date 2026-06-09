@@ -1,44 +1,57 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { cacheGet, cacheSet } from "@/lib/redis";
+// src/app/api/courses/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/prisma'
+import { getSession } from '@/lib/auth'
 
-const CACHE_KEY = "courses:all";
-const CACHE_TTL = 60; // 60 секунд
+// GET /api/courses — список курсов (публичный)
+// Query params: subject, grade, difficulty
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const subject = searchParams.get('subject') || undefined
+    const grade = searchParams.get('grade') ? Number(searchParams.get('grade')) : undefined
+    const difficulty = searchParams.get('difficulty') || undefined
 
-export async function GET() {
-  // ── 1. Пробуем кэш ─────────────────────────────────────────────────────
-  const cached = await cacheGet(CACHE_KEY);
-  if (cached) {
-    return NextResponse.json(cached, {
-      headers: { "X-Cache": "HIT" },
-    });
-  }
-
-  // ── 2. Запрос к БД — без N+1: один запрос с include ────────────────────
-  // Было: prisma.course.findMany({ include: { lessons: ... } })
-  // Уже правильно — Prisma делает JOIN, а не N запросов.
-  // Дополнительно: убираем тяжёлый контент урока из списка курсов.
-  const courses = await prisma.course.findMany({
-    orderBy: { createdAt: "desc" },
-    include: {
-      lessons: {
-        orderBy: { order: "asc" },
-        select: {
-          id: true,
-          title: true,
-          order: true,
-          xpReward: true,
-          videoUrl: true,
-          // НЕ включаем content — он не нужен в списке курсов (экономим трафик)
-        },
+    const courses = await prisma.course.findMany({
+      where: {
+        ...(subject && { subject }),
+        ...(grade && { grade }),
+        ...(difficulty && { difficulty }),
       },
-    },
-  });
+      include: {
+        _count: { select: { lessons: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
 
-  // ── 3. Сохраняем в кэш ─────────────────────────────────────────────────
-  await cacheSet(CACHE_KEY, courses, CACHE_TTL);
+    return NextResponse.json(courses)
+  } catch (e) {
+    console.error('[GET /api/courses]', e)
+    return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 })
+  }
+}
 
-  return NextResponse.json(courses, {
-    headers: { "X-Cache": "MISS" },
-  });
+// POST /api/courses — создать курс (только teacher)
+export async function POST(req: NextRequest) {
+  try {
+    const session = await getSession()
+    if (!session) return NextResponse.json({ error: 'Не авторизован' }, { status: 401 })
+    if (session.role !== 'teacher') return NextResponse.json({ error: 'Доступ запрещён' }, { status: 403 })
+
+    const body = await req.json()
+    const { title, description, subject, grade, difficulty, xpReward } = body
+
+    if (!title || !description || !subject || !grade || !difficulty) {
+      return NextResponse.json({ error: 'Заполните все обязательные поля' }, { status: 400 })
+    }
+
+    const course = await prisma.course.create({
+      data: { title, description, subject, grade: Number(grade), difficulty, xpReward: xpReward ?? 50 },
+    })
+
+    return NextResponse.json(course, { status: 201 })
+  } catch (e) {
+    console.error('[POST /api/courses]', e)
+    return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 })
+  }
 }

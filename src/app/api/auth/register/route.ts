@@ -1,85 +1,53 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/db";
-import { hashPassword, createToken, setSession } from "@/lib/auth";
-import { registerRateLimit } from "@/lib/rate-limit";
+// src/app/api/auth/register/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import bcrypt from 'bcryptjs'
+import { prisma } from '@/lib/prisma'
+import { createToken, COOKIE_NAME } from '@/lib/auth'
 
-async function verifyCaptcha(token: string): Promise<boolean> {
-  const secret = process.env.HCAPTCHA_SECRET_KEY;
-  if (!secret) {
-    console.error("HCAPTCHA_SECRET_KEY not set");
-    return false;
-  }
-  const params = new URLSearchParams({
-    secret,
-    response: token,
-  });
-  const res = await fetch("https://api.hcaptcha.com/siteverify", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params.toString(),
-  });
-  const data = await res.json();
-  return data.success === true;
-}
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-export async function POST(req: Request) {
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "anonymous";
-  const rl = await registerRateLimit(ip);
-  if (rl.limited) {
-    return NextResponse.json(
-      { error: "Слишком много попыток регистрации. Попробуйте через час." },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(rl.retryAfter),
-          "X-RateLimit-Limit": String(rl.limit),
-          "X-RateLimit-Remaining": "0",
-        },
-      }
-    );
-  }
-
+export async function POST(req: NextRequest) {
   try {
-    const { email, password, name, captchaToken } = await req.json();
-
-    if (!captchaToken) {
-      return NextResponse.json(
-        { error: "Капча обязательна" },
-        { status: 400 }
-      );
-    }
-    const captchaValid = await verifyCaptcha(captchaToken);
-    if (!captchaValid) {
-      return NextResponse.json(
-        { error: "Проверка капчи не пройдена. Попробуйте ещё раз." },
-        { status: 400 }
-      );
-    }
+    const body = await req.json()
+    const { email, password, name } = body
 
     if (!email || !password || !name) {
-      return NextResponse.json(
-        { error: "Email, password and name are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Все поля обязательны' }, { status: 400 })
     }
-    const existing = await prisma.user.findUnique({ where: { email } });
+    if (!EMAIL_RE.test(email)) {
+      return NextResponse.json({ error: 'Некорректный email' }, { status: 400 })
+    }
+    if (password.length < 6) {
+      return NextResponse.json({ error: 'Пароль минимум 6 символов' }, { status: 400 })
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email } })
     if (existing) {
-      return NextResponse.json(
-        { error: "User with this email already exists" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Email уже занят' }, { status: 409 })
     }
-    const hashed = await hashPassword(password);
+
+    const passwordHash = await bcrypt.hash(password, 10)
     const user = await prisma.user.create({
-      data: { email, password: hashed, name },
-      select: { id: true, email: true, name: true, xp: true, level: true },
-    });
-    const token = await createToken(user.id);
-    await setSession(token);
-    return NextResponse.json({ user });
+      data: { email, passwordHash, name, role: 'student' },
+    })
+
+    const token = await createToken({ userId: user.id, email: user.email, role: user.role })
+
+    const response = NextResponse.json(
+      { user: { id: user.id, email: user.email, name: user.name, role: user.role } },
+      { status: 201 }
+    )
+    response.cookies.set(COOKIE_NAME, token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 7,
+      path: '/',
+    })
+
+    return response
   } catch (e) {
-    console.error(e);
-    return NextResponse.json({ error: "Registration failed" }, { status: 500 });
+    console.error('[register]', e)
+    return NextResponse.json({ error: 'Внутренняя ошибка сервера' }, { status: 500 })
   }
 }

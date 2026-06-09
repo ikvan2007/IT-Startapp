@@ -1,54 +1,69 @@
-#!/usr/bin/env bash
-# =============================================================
-# restore.sh — восстановление базы из резервной копии
+#!/bin/bash
+# scripts/restore.sh
+#
+# Восстановление SQLite базы из бэкапа
 #
 # Использование:
-#   ./scripts/restore.sh                        # восстановить из latest.db
-#   ./scripts/restore.sh backups/backup_X.db    # из конкретного файла
-# =============================================================
+#   bash scripts/restore.sh backups/db_backup_20240101_020000.sqlite
+#   bash scripts/restore.sh --latest    — восстановить из последнего бэкапа
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-DB_PATH="$PROJECT_DIR/prisma/dev.db"
-BACKUP_DIR="$PROJECT_DIR/backups"
-LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')] [restore.sh]"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# ── Выбор файла для восстановления ───────────────────────────
-if [[ -n "${1:-}" ]]; then
-  SOURCE="$1"
-  # Если передан относительный путь — разворачиваем от PROJECT_DIR
-  if [[ "$SOURCE" != /* ]]; then
-    SOURCE="$PROJECT_DIR/$SOURCE"
+DATABASE_URL="${DATABASE_URL:-file:./prisma/dev.db}"
+DB_PATH="${DATABASE_URL#file:}"
+if [[ "$DB_PATH" != /* ]]; then
+  DB_PATH="$ROOT_DIR/$DB_PATH"
+fi
+
+BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups}"
+
+# ── Определить файл для восстановления ──────────────────────────────────
+if [[ "${1:-}" == "--latest" ]]; then
+  RESTORE_FILE=$(find "$BACKUP_DIR" -name "db_backup_*.sqlite" | sort | tail -n1)
+  if [ -z "$RESTORE_FILE" ]; then
+    echo "❌ Нет бэкапов в $BACKUP_DIR"
+    exit 1
   fi
+  echo "📂 Последний бэкап: $RESTORE_FILE"
+elif [ -n "${1:-}" ]; then
+  RESTORE_FILE="$1"
 else
-  SOURCE="$BACKUP_DIR/latest.db"
-fi
-
-if [ ! -f "$SOURCE" ]; then
-  echo "$LOG_PREFIX ERROR: файл не найден: $SOURCE" >&2
-  echo "Доступные бэкапы:" >&2
-  ls -lh "$BACKUP_DIR"/backup_*.db 2>/dev/null || echo "  (нет бэкапов)" >&2
+  echo "Использование: $0 <файл_бэкапа> | --latest"
   exit 1
 fi
 
-echo "$LOG_PREFIX Источник: $SOURCE ($(du -sh "$SOURCE" | cut -f1))"
+if [ ! -f "$RESTORE_FILE" ]; then
+  echo "❌ Файл не найден: $RESTORE_FILE"
+  exit 1
+fi
 
-# ── Сохранить текущую БД как pre-restore бэкап ───────────────
+# ── Проверить контрольную сумму ──────────────────────────────────────────
+CHECKSUM_FILE="$RESTORE_FILE.sha256"
+if [ -f "$CHECKSUM_FILE" ]; then
+  echo "🔐 Проверяем контрольную сумму..."
+  if command -v sha256sum &>/dev/null; then
+    sha256sum -c "$CHECKSUM_FILE" && echo "   ✅ Контрольная сумма OK"
+  elif command -v shasum &>/dev/null; then
+    shasum -a 256 -c "$CHECKSUM_FILE" && echo "   ✅ Контрольная сумма OK"
+  fi
+fi
+
+# ── Создать резервную копию текущей БД ───────────────────────────────────
 if [ -f "$DB_PATH" ]; then
-  PRE="$BACKUP_DIR/pre-restore_$(date +%Y-%m-%d_%H-%M-%S).db"
-  cp "$DB_PATH" "$PRE"
-  echo "$LOG_PREFIX Текущая БД сохранена как: $PRE"
+  CURRENT_BACKUP="$DB_PATH.before_restore_$(date +%Y%m%d_%H%M%S)"
+  cp "$DB_PATH" "$CURRENT_BACKUP"
+  echo "💾 Текущая БД сохранена: $CURRENT_BACKUP"
 fi
 
-# ── Восстановление ───────────────────────────────────────────
-cp "$SOURCE" "$DB_PATH"
+echo ""
+echo "🔄 Восстанавливаем из: $RESTORE_FILE"
+echo "   В: $DB_PATH"
 
-if [ ! -s "$DB_PATH" ]; then
-  echo "$LOG_PREFIX ERROR: восстановленная БД пуста" >&2
-  exit 1
-fi
+mkdir -p "$(dirname "$DB_PATH")"
+cp "$RESTORE_FILE" "$DB_PATH"
 
-echo "$LOG_PREFIX OK: база восстановлена -> $DB_PATH"
-echo "$LOG_PREFIX DONE"
+echo "✅ Восстановление завершено!"
+echo "   Размер: $(du -sh "$DB_PATH" | cut -f1)"

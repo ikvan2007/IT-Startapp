@@ -1,67 +1,84 @@
-#!/usr/bin/env bash
-# =============================================================
-# backup.sh — резервное копирование SQLite базы данных
+#!/bin/bash
+# scripts/backup.sh
 #
-# Использование:
-#   ./scripts/backup.sh              # создать бэкап
-#   ./scripts/backup.sh --clean      # создать бэкап + удалить старые (>7 дней)
+# Резервное копирование SQLite базы данных
 #
-# Cron (каждый день в 2:00):
-#   0 2 * * * /bin/bash /path/to/project/scripts/backup.sh --clean >> /var/log/studytask-backup.log 2>&1
-# =============================================================
+# Запуск:
+#   bash scripts/backup.sh           — создать бэкап
+#   bash scripts/backup.sh --clean   — создать бэкап + удалить старые
+#
+# Переменные окружения:
+#   DATABASE_URL     — путь к БД (file:./prisma/dev.db)
+#   BACKUP_KEEP_DAYS — сколько дней хранить бэкапы (default: 7)
+#   BACKUP_DIR       — папка для бэкапов (default: ./backups)
 
 set -euo pipefail
 
-# ── Пути ────────────────────────────────────────────────────
+# ── Настройки ────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-DB_PATH="$PROJECT_DIR/prisma/dev.db"
-BACKUP_DIR="$PROJECT_DIR/backups"
-TIMESTAMP="$(date +%Y-%m-%d_%H-%M-%S)"
-BACKUP_FILE="$BACKUP_DIR/backup_${TIMESTAMP}.db"
-LATEST_LINK="$BACKUP_DIR/latest.db"
-LOG_PREFIX="[$(date '+%Y-%m-%d %H:%M:%S')] [backup.sh]"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 
-# ── Проверки ─────────────────────────────────────────────────
+DATABASE_URL="${DATABASE_URL:-file:./prisma/dev.db}"
+DB_PATH="${DATABASE_URL#file:}"
+# Если путь относительный — относительно корня проекта
+if [[ "$DB_PATH" != /* ]]; then
+  DB_PATH="$ROOT_DIR/$DB_PATH"
+fi
+
+BACKUP_DIR="${BACKUP_DIR:-$ROOT_DIR/backups}"
+BACKUP_KEEP_DAYS="${BACKUP_KEEP_DAYS:-7}"
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+BACKUP_FILE="$BACKUP_DIR/db_backup_$TIMESTAMP.sqlite"
+CHECKSUM_FILE="$BACKUP_FILE.sha256"
+
+# ── Проверки ─────────────────────────────────────────────────────────────
 if [ ! -f "$DB_PATH" ]; then
-  echo "$LOG_PREFIX ERROR: база данных не найдена: $DB_PATH" >&2
+  echo "❌ База данных не найдена: $DB_PATH"
   exit 1
 fi
 
 mkdir -p "$BACKUP_DIR"
 
-# ── Создание бэкапа ──────────────────────────────────────────
-echo "$LOG_PREFIX Создание бэкапа..."
+echo "🗄️  Бэкап базы данных Study Task"
+echo "   Источник  : $DB_PATH"
+echo "   Назначение: $BACKUP_FILE"
+echo "   Время     : $(date)"
+echo ""
 
-# sqlite3 .backup — атомарный снимок, безопасен при работающем приложении
+# ── Создать бэкап через sqlite3 (онлайн-бэкап без блокировки) ───────────
 if command -v sqlite3 &>/dev/null; then
   sqlite3 "$DB_PATH" ".backup '$BACKUP_FILE'"
+  echo "✅ Бэкап создан через sqlite3 (online backup API)"
 else
-  # Fallback: обычное копирование
+  # Fallback: просто скопировать файл
   cp "$DB_PATH" "$BACKUP_FILE"
+  echo "✅ Бэкап создан (cp fallback — sqlite3 не найден)"
 fi
 
-# Проверить, что файл создан и не пустой
-if [ ! -s "$BACKUP_FILE" ]; then
-  echo "$LOG_PREFIX ERROR: файл бэкапа пуст или не создан" >&2
-  exit 1
+# ── Контрольная сумма ────────────────────────────────────────────────────
+if command -v sha256sum &>/dev/null; then
+  sha256sum "$BACKUP_FILE" > "$CHECKSUM_FILE"
+  echo "🔐 Контрольная сумма: $CHECKSUM_FILE"
+elif command -v shasum &>/dev/null; then
+  shasum -a 256 "$BACKUP_FILE" > "$CHECKSUM_FILE"
+  echo "🔐 Контрольная сумма: $CHECKSUM_FILE"
 fi
 
-BACKUP_SIZE="$(du -sh "$BACKUP_FILE" | cut -f1)"
-echo "$LOG_PREFIX OK: $BACKUP_FILE ($BACKUP_SIZE)"
+# ── Размер ───────────────────────────────────────────────────────────────
+SIZE=$(du -sh "$BACKUP_FILE" | cut -f1)
+echo "📦 Размер бэкапа: $SIZE"
 
-# ── Симлинк на последний бэкап ───────────────────────────────
-ln -sf "$BACKUP_FILE" "$LATEST_LINK"
-echo "$LOG_PREFIX Симлинк обновлён: $LATEST_LINK -> $BACKUP_FILE"
-
-# ── Очистка старых бэкапов (если передан флаг --clean) ───────
+# ── Удалить старые бэкапы ────────────────────────────────────────────────
 if [[ "${1:-}" == "--clean" ]]; then
-  KEEP_DAYS=7
-  DELETED=$(find "$BACKUP_DIR" -name "backup_*.db" -mtime +${KEEP_DAYS} -print -delete | wc -l)
-  echo "$LOG_PREFIX Удалено старых бэкапов (>${KEEP_DAYS} дней): $DELETED"
+  echo ""
+  echo "🧹 Удаляем бэкапы старше $BACKUP_KEEP_DAYS дней..."
+  DELETED=$(find "$BACKUP_DIR" -name "db_backup_*.sqlite" -mtime +"$BACKUP_KEEP_DAYS" -print -delete | wc -l)
+  find "$BACKUP_DIR" -name "db_backup_*.sqlite.sha256" -mtime +"$BACKUP_KEEP_DAYS" -delete 2>/dev/null || true
+  echo "   Удалено: $DELETED файлов"
 fi
 
-# ── Итог ─────────────────────────────────────────────────────
-TOTAL=$(find "$BACKUP_DIR" -name "backup_*.db" | wc -l)
-echo "$LOG_PREFIX Всего бэкапов в $BACKUP_DIR: $TOTAL"
-echo "$LOG_PREFIX DONE"
+# ── Итог ─────────────────────────────────────────────────────────────────
+TOTAL=$(find "$BACKUP_DIR" -name "db_backup_*.sqlite" | wc -l)
+echo ""
+echo "✅ Готово! Всего бэкапов: $TOTAL"
+echo "   Последний: $BACKUP_FILE"

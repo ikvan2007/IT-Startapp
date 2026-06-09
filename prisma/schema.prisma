@@ -1,110 +1,101 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String
-  surname   String?
-  age       Int?
-  gender    String?
-  avatar    String?
-  role      String   @default("student") // student | teacher
-  xp        Int      @default(0)
-  level     Int      @default(1)
-  createdAt DateTime @default(now())
-  progress  LessonProgress[]
-  badges    UserBadge[]
+  id             Int              @id @default(autoincrement())
+  email          String           @unique
+  passwordHash   String
+  name           String
+  avatar         String?
+  role           String           @default("student") // "student" | "teacher"
+  xp             Int              @default(0)
+  level          Int              @default(1)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
-  @@index([xp(sort: Desc)])
+  lessonProgress LessonProgress[]
+  badges         UserBadge[]
 }
 
 model Course {
-  id            String   @id @default(cuid())
-  title         String
-  description   String
-  image         String?
-  category      String
-  subject       String?
-  grade         Int?
-  difficulty    String
-  xpReward      Int      @default(100)
-  cost          Float    @default(0)
-  durationHours Int?
-  lessons       Lesson[]
-  createdAt     DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String
+  subject     String
+  grade       Int      // 1–11
+  difficulty  String   // "easy" | "medium" | "hard"
+  xpReward    Int      @default(10)
+  createdAt   DateTime @default(now())
 
-  @@index([createdAt(sort: Desc)])
-  @@index([category])
+  lessons     Lesson[]
 }
 
 model Lesson {
-  id        String   @id @default(cuid())
-  courseId  String
-  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  id        Int      @id @default(autoincrement())
+  courseId  Int
   title     String
   content   String
+  videoUrl  String?
   order     Int
   xpReward  Int      @default(10)
-  videoUrl  String?
+  createdAt DateTime @default(now())
+
+  course    Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
   progress  LessonProgress[]
-  quiz      QuizQuestion[]
-
-  @@index([courseId, order])
-}
-
-model QuizQuestion {
-  id           String   @id @default(cuid())
-  lessonId     String
-  lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  questionText String
-  options      String
-  correctIndex Int
-
-  @@index([lessonId])
+  questions QuizQuestion[]
 }
 
 model LessonProgress {
-  id          String    @id @default(cuid())
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lessonId    String
-  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  completed   Boolean   @default(false)
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  lessonId    Int
+  completed   Boolean  @default(false)
   completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 
   @@unique([userId, lessonId])
-  @@index([userId])
-  @@index([lessonId])
-  @@index([lessonId, completed])
+}
+
+model QuizQuestion {
+  id            Int      @id @default(autoincrement())
+  lessonId      Int
+  text          String
+  options       String   // JSON array of strings
+  correctAnswer Int      // index into options
+  createdAt     DateTime @default(now())
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 }
 
 model Badge {
-  id          String   @id @default(cuid())
+  id          Int      @id @default(autoincrement())
   name        String
   description String
   icon        String
-  xpRequired  Int
-  users       UserBadge[]
+  xpThreshold Int
 
-  @@index([xpRequired])
+  users       UserBadge[]
 }
 
 model UserBadge {
-  id       String   @id @default(cuid())
-  userId   String
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  badgeId  String
-  badge    Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
-  earnedAt DateTime @default(now())
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  badgeId   Int
+  awardedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge Badge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
 
   @@unique([userId, badgeId])
-  @@index([userId])
 }
