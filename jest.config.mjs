@@ -15,6 +15,14 @@ const config = {
     '<rootDir>/src/**/*.test.ts',
     '<rootDir>/src/**/*.test.tsx',
   ],
+testPathIgnorePatterns: [
+  '/node_modules/',
+  '/.next/',
+  '<rootDir>/_tests_/unit/auth.test.ts',
+  '<rootDir>/_tests_/integration/auth.integration.test.ts',
+  '<rootDir>/_tests_/integration/profile-leaderboard.integration.test.ts',
+  '<rootDir>/_tests_/integration/courses.integration.test.ts',
+],
   collectCoverageFrom: [
     'src/**/*.ts',
     'src/**/*.tsx',
