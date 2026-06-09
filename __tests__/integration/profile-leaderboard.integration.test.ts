@@ -1,6 +1,7 @@
+/**
+ * @jest-environment node
+ */
 // __tests__/integration/profile-leaderboard.integration.test.ts
-
-import { NextRequest } from 'next/server'
 
 jest.mock('@/lib/prisma', () => ({
   prisma: {
@@ -43,7 +44,6 @@ const mockFullUser = {
   ],
 }
 
-// ── GET /api/profile ──────────────────────────────────────────────────────
 describe('GET /api/profile', () => {
   beforeEach(() => jest.clearAllMocks())
 
@@ -64,7 +64,7 @@ describe('GET /api/profile', () => {
     expect(data.email).toBe('student@edu.ru')
     expect(data.xp).toBe(150)
     expect(data.level).toBe(2)
-    expect(data.xpToNextLevel).toBe(50) // 200 - 150 = 50
+    expect(data.xpToNextLevel).toBe(50)
     expect(Array.isArray(data.badges)).toBe(true)
     expect(Array.isArray(data.recentLessons)).toBe(true)
   })
@@ -88,7 +88,6 @@ describe('GET /api/profile', () => {
   })
 })
 
-// ── GET /api/leaderboard ──────────────────────────────────────────────────
 describe('GET /api/leaderboard', () => {
   const mockLeaders = [
     { id: 2, name: 'Топ Студент', xp: 500, level: 6, avatar: null },
@@ -97,7 +96,7 @@ describe('GET /api/leaderboard', () => {
 
   beforeEach(() => jest.clearAllMocks())
 
-  it('200 — публичный эндпоинт, не требует авторизации', async () => {
+  it('200 — публичный эндпоинт', async () => {
     ;(prisma.user.findMany as jest.Mock).mockResolvedValue(mockLeaders)
 
     const res = await getLeaderboard()

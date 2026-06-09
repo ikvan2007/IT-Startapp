@@ -1,6 +1,7 @@
+/**
+ * @jest-environment node
+ */
 // __tests__/integration/courses.integration.test.ts
-//
-// Integration-тесты для /api/courses
 
 import { NextRequest } from 'next/server'
 
@@ -62,7 +63,6 @@ function makeRequest(method: string, body?: unknown, url = 'http://localhost:300
   })
 }
 
-// ── GET /api/courses ──────────────────────────────────────────────────────
 describe('GET /api/courses', () => {
   beforeEach(() => jest.clearAllMocks())
 
@@ -116,7 +116,6 @@ describe('GET /api/courses', () => {
   })
 })
 
-// ── POST /api/courses ─────────────────────────────────────────────────────
 describe('POST /api/courses', () => {
   const newCourse = { title: 'Химия', description: 'Базовая химия', subject: 'Химия', grade: 8, difficulty: 'medium' }
 

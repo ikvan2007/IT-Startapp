@@ -1,3 +1,6 @@
+/**
+ * @jest-environment node
+ */
 // __tests__/unit/auth.test.ts
 //
 // Unit-тесты для src/lib/auth.ts
@@ -49,7 +52,6 @@ describe('Auth — JWT utilities', () => {
     })
 
     it('возвращает null для истёкшего токена', async () => {
-      // Создаём токен с истёкшим exp (вручную подделываем)
       const { SignJWT } = await import('jose')
       const secret = new TextEncoder().encode('edu-platform-secret-change-me-in-production')
       const expired = await new SignJWT({ ...payload })
@@ -57,7 +59,6 @@ describe('Auth — JWT utilities', () => {
         .setExpirationTime('1s')
         .sign(secret)
 
-      // Ждём секунду
       await new Promise((r) => setTimeout(r, 1100))
       const result = await verifyToken(expired)
       expect(result).toBeNull()

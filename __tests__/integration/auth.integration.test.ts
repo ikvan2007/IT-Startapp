@@ -1,13 +1,10 @@
+/**
+ * @jest-environment node
+ */
 // __tests__/integration/auth.integration.test.ts
-//
-// Integration-тесты для API аутентификации
-// Мокаем Prisma и тестируем реальные route handlers
-//
-// Запуск: npx jest __tests__/integration/auth.integration.test.ts
 
 import { NextRequest } from 'next/server'
 
-// ── Моки ─────────────────────────────────────────────────────────────────
 const mockUser = {
   id: 1,
   email: 'student@edu.ru',
@@ -39,7 +36,6 @@ jest.mock('bcryptjs', () => ({
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 
-// Хелпер для создания NextRequest
 function makeRequest(method: string, body: unknown, url = 'http://localhost:3000'): NextRequest {
   return new NextRequest(url, {
     method,
@@ -48,18 +44,14 @@ function makeRequest(method: string, body: unknown, url = 'http://localhost:3000
   })
 }
 
-// ── /api/auth/login ───────────────────────────────────────────────────────
 describe('POST /api/auth/login', () => {
   let loginRoute: typeof import('@/app/api/auth/login/route')
-
-  beforeEach(() => {
-    jest.resetModules()
-    jest.clearAllMocks()
-  })
 
   beforeAll(async () => {
     loginRoute = await import('@/app/api/auth/login/route')
   })
+
+  beforeEach(() => jest.clearAllMocks())
 
   it('200 — успешный вход', async () => {
     ;(prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser)
@@ -117,7 +109,6 @@ describe('POST /api/auth/login', () => {
   })
 })
 
-// ── /api/auth/register ────────────────────────────────────────────────────
 describe('POST /api/auth/register', () => {
   let registerRoute: typeof import('@/app/api/auth/register/route')
 

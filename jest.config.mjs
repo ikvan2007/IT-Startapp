@@ -1,4 +1,3 @@
-// jest.config.mjs
 import nextJest from 'next/jest.js'
 
 const createJestConfig = nextJest({ dir: './' })
@@ -6,7 +5,7 @@ const createJestConfig = nextJest({ dir: './' })
 /** @type {import('jest').Config} */
 const config = {
   testEnvironment: 'jest-environment-jsdom',
-  setupFilesAfterEach: ['<rootDir>/jest.setup.js'],
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
@@ -30,7 +29,6 @@ const config = {
       statements: 70,
     },
   },
-  // Показывать каждый тест в verbose
   verbose: false,
 }
 
