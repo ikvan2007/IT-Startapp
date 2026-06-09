@@ -1,0 +1,101 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             Int              @id @default(autoincrement())
+  email          String           @unique
+  passwordHash   String
+  name           String
+  avatar         String?
+  role           String           @default("student") // "student" | "teacher"
+  xp             Int              @default(0)
+  level          Int              @default(1)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  lessonProgress LessonProgress[]
+  badges         UserBadge[]
+}
+
+model Course {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String
+  subject     String
+  grade       Int      // 1–11
+  difficulty  String   // "easy" | "medium" | "hard"
+  xpReward    Int      @default(10)
+  createdAt   DateTime @default(now())
+
+  lessons     Lesson[]
+}
+
+model Lesson {
+  id        Int      @id @default(autoincrement())
+  courseId  Int
+  title     String
+  content   String
+  videoUrl  String?
+  order     Int
+  xpReward  Int      @default(10)
+  createdAt DateTime @default(now())
+
+  course    Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  progress  LessonProgress[]
+  questions QuizQuestion[]
+}
+
+model LessonProgress {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  lessonId    Int
+  completed   Boolean  @default(false)
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+}
+
+model QuizQuestion {
+  id            Int      @id @default(autoincrement())
+  lessonId      Int
+  text          String
+  options       String   // JSON array of strings
+  correctAnswer Int      // index into options
+  createdAt     DateTime @default(now())
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+}
+
+model Badge {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  icon        String
+  xpThreshold Int
+
+  users       UserBadge[]
+}
+
+model UserBadge {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  badgeId   Int
+  awardedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge Badge @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+}
