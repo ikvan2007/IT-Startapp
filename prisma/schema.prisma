@@ -1,0 +1,110 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  surname   String?
+  age       Int?
+  gender    String?
+  avatar    String?
+  role      String   @default("student") // student | teacher
+  xp        Int      @default(0)
+  level     Int      @default(1)
+  createdAt DateTime @default(now())
+  progress  LessonProgress[]
+  badges    UserBadge[]
+
+  @@index([xp(sort: Desc)])
+}
+
+model Course {
+  id            String   @id @default(cuid())
+  title         String
+  description   String
+  image         String?
+  category      String
+  subject       String?
+  grade         Int?
+  difficulty    String
+  xpReward      Int      @default(100)
+  cost          Float    @default(0)
+  durationHours Int?
+  lessons       Lesson[]
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([category])
+}
+
+model Lesson {
+  id        String   @id @default(cuid())
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  order     Int
+  xpReward  Int      @default(10)
+  videoUrl  String?
+  progress  LessonProgress[]
+  quiz      QuizQuestion[]
+
+  @@index([courseId, order])
+}
+
+model QuizQuestion {
+  id           String   @id @default(cuid())
+  lessonId     String
+  lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  questionText String
+  options      String
+  correctIndex Int
+
+  @@index([lessonId])
+}
+
+model LessonProgress {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId    String
+  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+
+  @@unique([userId, lessonId])
+  @@index([userId])
+  @@index([lessonId])
+  @@index([lessonId, completed])
+}
+
+model Badge {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  icon        String
+  xpRequired  Int
+  users       UserBadge[]
+
+  @@index([xpRequired])
+}
+
+model UserBadge {
+  id       String   @id @default(cuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId  String
+  badge    Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+  earnedAt DateTime @default(now())
+
+  @@unique([userId, badgeId])
+  @@index([userId])
+}

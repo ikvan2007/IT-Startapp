@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Сине-фиолетовая гамма */
+  --bg: #f5f3ff;
+  --bg-card: #ffffff;
+  --bg-elevated: #ede9fe;
+  --accent: #5b21b6;
+  --accent-light: #7c3aed;
+  --accent-blue: #2563eb;
+  --accent-glow: rgba(91, 33, 182, 0.2);
+  --success: #22c55e;
+  --warning: #eab308;
+  --xp-gold: #7c3aed;
+  --text: #1e1b4b;
+  --text-muted: #5b4b7a;
+  --border: #e9e5f0;
+  --radius: 14px;
+  --radius-sm: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Nunito", system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .gradient-text {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600;
+  }
+  .card-hover {
+    @apply transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:shadow-violet-500/15 hover:border-violet-400/50;
+  }
+  .btn-primary {
+    @apply px-5 py-2.5 rounded-xl font-semibold bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-500 hover:to-purple-500 active:scale-[0.98] transition-all shadow-lg shadow-violet-500/25;
+  }
+  .btn-ghost {
+    @apply px-4 py-2 rounded-xl font-medium text-violet-800/90 hover:bg-violet-100 hover:text-violet-900 transition-colors;
+  }
+}
+
+/* Progress bar animation */
+@keyframes fill-bar {
+  from { width: 0%; }
+}
+
+.animate-fill-bar {
+  animation: fill-bar 0.6s ease-out forwards;
+}
+
+/* Level badge pulse */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(91, 33, 182, 0.3); }
+  50% { box-shadow: 0 0 16px 3px rgba(124, 58, 237, 0.2); }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translate(-50%, -10px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
