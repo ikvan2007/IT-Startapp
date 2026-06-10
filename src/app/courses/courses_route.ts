@@ -10,9 +10,13 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const subject = searchParams.get('subject') || undefined
     const grade = searchParams.get('grade') ? Number(searchParams.get('grade')) : undefined
+
     const cacheKey = `courses:${subject ?? 'all'}:${grade ?? 'all'}`
     const cached = await cacheGet(cacheKey)
-    if (cached) return NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } })
+    if (cached) {
+      return NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } })
+    }
+
     const courses = await prisma.course.findMany({
       where: {
         ...(subject ? { subject } : {}),
@@ -24,6 +28,7 @@ export async function GET(req: NextRequest) {
       },
       orderBy: { createdAt: 'desc' },
     })
+
     await cacheSet(cacheKey, courses, CACHE_TTL)
     return NextResponse.json(courses, { headers: { 'X-Cache': 'MISS' } })
   } catch (e) {
@@ -35,16 +40,28 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await getSession()
-    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    if (session.role !== 'teacher') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+    if (session.role !== 'teacher') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const body = await req.json()
     const { title, description, subject, grade, difficulty, xpReward } = body
-    if (!title || !subject) return NextResponse.json({ error: 'title and subject required' }, { status: 400 })
+
+    if (!title || !subject) {
+      return NextResponse.json({ error: 'title and subject required' }, { status: 400 })
+    }
+
     const course = await prisma.course.create({
       data: {
-        title, description: description || '', subject,
+        title,
+        description: description || '',
+        subject,
         grade: grade != null ? Number(grade) : 1,
-        difficulty: difficulty || 'easy', xpReward: xpReward ?? 50,
+        difficulty: difficulty || 'easy',
+        xpReward: xpReward ?? 50,
       },
     })
     return NextResponse.json(course, { status: 201 })
