@@ -1,16 +1,29 @@
-// src/app/api/courses/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSession } from '@/lib/auth'
+import { redis } from '@/lib/redis'
 
-// GET /api/courses — список курсов (публичный)
-// Query params: subject, grade, difficulty
+const CACHE_TTL = 60
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
     const subject = searchParams.get('subject') || undefined
     const grade = searchParams.get('grade') ? Number(searchParams.get('grade')) : undefined
     const difficulty = searchParams.get('difficulty') || undefined
+
+    const cacheKey = `cache:courses:${JSON.stringify({
+      subject: subject ?? null,
+      grade: grade ?? null,
+      difficulty: difficulty ?? null,
+    })}`
+
+    const cached = await redis.get(cacheKey)
+    if (cached) {
+      return NextResponse.json(JSON.parse(cached), {
+        headers: { 'X-Cache': 'HIT' },
+      })
+    }
 
     const courses = await prisma.course.findMany({
       where: {
@@ -24,7 +37,11 @@ export async function GET(req: NextRequest) {
       orderBy: { createdAt: 'desc' },
     })
 
-    return NextResponse.json(courses)
+    await redis.set(cacheKey, JSON.stringify(courses), 'EX', CACHE_TTL)
+
+    return NextResponse.json(courses, {
+      headers: { 'X-Cache': 'MISS' },
+    })
   } catch (e) {
     console.error('[GET /api/courses]', e)
     return NextResponse.json({ error: 'Ошибка сервера' }, { status: 500 })
